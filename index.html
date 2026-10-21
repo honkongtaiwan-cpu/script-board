@@ -256,15 +256,6 @@ textarea.paste { width: 100%; min-height: 110px; border: 1px solid var(--line); 
     </div>
   </div>
 </div>
-<div class="overlay" id="login" hidden>
-  <form class="card modal" id="loginForm" style="width:min(380px,100%)">
-    <div class="brand" style="padding:0"><b>SCRIPT BOARD</b><span>製片腳本工作台</span></div>
-    <label class="field"><span class="label">Email</span><input class="search" id="loginEmail" type="email" autocomplete="username" required></label>
-    <label class="field"><span class="label">密碼</span><input class="search" id="loginPass" type="password" autocomplete="current-password" required></label>
-    <button class="btn primary" id="loginBtn" type="submit" style="justify-content:center">登入</button>
-    <div class="msg" id="loginMsg">用你在 Supabase 建立的帳號登入。</div>
-  </form>
-</div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -299,7 +290,7 @@ function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = fals
 const cfg = window.SCRIPT_BOARD_CONFIG || {};
 const sb = cfg.supabaseUrl && cfg.supabaseAnonKey && window.supabase ? supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
 const T = { folders: 'board_folders', projects: 'board_projects', shots: 'board_shots' };
-let lastLoad = 0, userEmail = '';
+let lastLoad = 0;
 
 async function sbWrite(q) { const { error } = await q; if (error) throw error; }
 const strip = o => { const { id, ...d } = o || {}; return d; };
@@ -316,8 +307,7 @@ const api = {
 };
 async function guard(p) {
   try { return await p; } catch (e) {
-    if (e?.status === 401 || /JWT|session/i.test(e?.message || '')) { toast('登入已過期，請重新登入。'); showLogin(); }
-    else toast('儲存失敗，請檢查網路後再試。');
+    toast('儲存失敗，請檢查網路後再試。');
     throw e;
   }
 }
@@ -350,20 +340,6 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.mode === 'db' && Date.now() - lastLoad > 15000 && !editing()) loadAll();
 });
 
-/* ---------- login ---------- */
-function showLogin(msg) {
-  $('#login').hidden = false;
-  if (msg) { $('#loginMsg').textContent = msg; $('#loginMsg').className = 'msg err'; }
-}
-$('#loginForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  const btn = $('#loginBtn'); btn.disabled = true; $('#loginMsg').className = 'msg'; $('#loginMsg').textContent = '登入中…';
-  const { error } = await sb.auth.signInWithPassword({ email: $('#loginEmail').value.trim(), password: $('#loginPass').value });
-  btn.disabled = false;
-  if (error) { $('#loginMsg').className = 'msg err'; $('#loginMsg').textContent = /invalid/i.test(error.message) ? 'Email 或密碼不對，請再試一次。' : '登入失敗：' + error.message; }
-});
-async function logout() { await sb.auth.signOut(); }
-
 /* ---------- backup ---------- */
 function backupDownload() {
   const pack = k => [...state[k].values()].map(o => ({ id: o.id, data: strip(o) }));
@@ -389,21 +365,9 @@ document.addEventListener('change', e => { if (e.target.id === 'backupFile') { c
 
 async function boot() {
   render();
-  if (!sb) {
-    showLogin(window.supabase ? '還沒設定：請在 config.js 填入 Supabase 的專案網址和公開金鑰（anon key）。' : '登入元件沒有載入，請檢查網路後重新整理。');
-    $('#loginBtn').disabled = true; return;
-  }
-  sb.auth.onAuthStateChange((event, session) => {
-    if (session) {
-      userEmail = session.user.email || '';
-      $('#login').hidden = true;
-      // supabase-js repeats SIGNED_IN whenever the tab regains focus; only load on the first one.
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && state.mode !== 'db') loadAll();
-    } else {
-      state.folders = new Map(); state.projects = new Map(); state.shots = new Map(); state.mode = 'loading';
-      render(); showLogin();
-    }
-  });
+  if (!sb) { toast(window.supabase ? '還沒設定：請在 config.js 填入 Supabase 的專案網址和公開金鑰。' : '資料元件沒有載入，請檢查網路後重新整理。'); return; }
+  // Public board: no sign-in, anyone with the link reads and writes through the anon key.
+  loadAll();
 }
 
 /* ---------- derived ---------- */
@@ -504,7 +468,7 @@ function renderRail() {
 function renderMode() {
   const mode = $('#mode');
   mode.className = 'mode';
-  mode.innerHTML = state.mode === 'db' ? `${esc(userEmail)}・已同步 <button class="btn ghost" type="button" data-act="logout" style="padding:2px 6px">登出</button>` : '連線中…';
+  mode.innerHTML = state.mode === 'db' ? '公開看板・已同步' : '連線中…';
 }
 
 function renderMain() {
@@ -739,7 +703,7 @@ document.addEventListener('click', async e => {
   if (b.dataset.tab) { state.tab = b.dataset.tab; render(); return; }
   if (b.dataset.stage && p) { if (state.canWrite) guard(api.updateProject(p.id, { stage: +b.dataset.stage })); return; }
   const act = b.dataset.act, tr = b.closest('tr[data-sid]'), sid = tr?.dataset.sid;
-  if (!state.canWrite && !['exportOne', 'exportCsv', 'copyTsv', 'exportAll', 'exportFolder', 'back', 'logout', 'backupDown'].includes(act)) return;
+  if (!state.canWrite && !['exportOne', 'exportCsv', 'copyTsv', 'exportAll', 'exportFolder', 'back', 'backupDown'].includes(act)) return;
   switch (act) {
     case 'planAdd': case 'planInsert': {
       const rows = planRows(p).map(r => ({ ...r })), at = act === 'planAdd' ? rows.length : +b.closest('tr').dataset.pr + 1;
@@ -764,7 +728,6 @@ document.addEventListener('click', async e => {
       render(); break;
     }
     case 'planCancel': planPending = null; render(); break;
-    case 'logout': logout(); break;
     case 'backupDown': backupDownload(); break;
     case 'back': clearSearch(); state.folder = null; render(); break;
     case 'newFolder': newFolder(); break;
