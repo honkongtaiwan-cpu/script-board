@@ -1,0 +1,1069 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>製片腳本工作台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<style>
+html, body { margin: 0; } img { max-width: 100%; }
+/* Layout: production-office board — project rail on the left, a shooting-script sheet on the right, slate-style labels. */
+:root {
+  --paper: #ECEEF0;
+  --sheet: #FFFFFF;
+  --sheet-2: #F6F7F8;
+  --ink: #17202A;
+  --muted: #5B6875;
+  --line: #D2D7DD;
+  --accent: #C2410C;
+  --accent-soft: #FBE7DC;
+  --on-accent: #FFFFFF;
+  --ok: #2E7A4C;
+  --ok-soft: #DDF0E4;
+  --warn: #A66A12;
+  --warn-soft: #F7ECD6;
+  --danger: #B42318;
+  --shadow: 0 1px 2px rgb(23 32 42 / .06), 0 8px 24px rgb(23 32 42 / .06);
+  --f-display: "Barlow Condensed", "Noto Sans TC", "PingFang TC", sans-serif;
+  --f-body: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #11161B; --sheet: #192027; --sheet-2: #1F272F; --ink: #E5E9ED; --muted: #94A1AE; --line: #2D3741;
+  --accent: #F0783A; --accent-soft: #3A2419; --on-accent: #1A0F09; --ok: #62C08A; --ok-soft: #1B3326;
+  --warn: #E2A94C; --warn-soft: #382B15; --danger: #F07167; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #11161B; --sheet: #192027; --sheet-2: #1F272F; --ink: #E5E9ED; --muted: #94A1AE; --line: #2D3741;
+  --accent: #F0783A; --accent-soft: #3A2419; --on-accent: #1A0F09; --ok: #62C08A; --ok-soft: #1B3326;
+  --warn: #E2A94C; --warn-soft: #382B15; --danger: #F07167; --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+  color-scheme: dark }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--paper); color: var(--ink); font: 14px/1.55 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+/* phones zoom the page when a field under 16px gets focus */
+@media (pointer: coarse) { input, select, textarea, .cell { font-size: 16px !important; } }
+button, label.btn { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.label { font-family: var(--f-display); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; color: var(--muted); }
+
+.app { display: grid; grid-template-columns: 272px minmax(0, 1fr); gap: 16px; max-width: 1480px; margin: 0 auto; min-height: calc(100% - 0px); }
+@media (max-width: 860px) { .app { grid-template-columns: minmax(0, 1fr); } }
+
+/* rail */
+.rail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.brand { display: flex; align-items: baseline; gap: 8px; padding: 4px 2px; }
+.brand b { font-family: var(--f-display); font-size: 22px; letter-spacing: .04em; }
+.brand span { color: var(--muted); font-size: 12px; }
+.mode { font-size: 12px; color: var(--muted); padding: 0 2px; }
+.mode.warn { color: var(--warn); }
+.search { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--sheet); }
+.plist { display: flex; flex-direction: column; gap: 6px; }
+.pitem { text-align: left; border: 1px solid var(--line); background: var(--sheet); border-radius: 8px; padding: 10px 12px; display: grid; gap: 6px; }
+.pitem:hover { border-color: var(--muted); }
+.pitem[aria-current="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.pitem .t { font-weight: 700; overflow-wrap: anywhere; }
+.pitem .meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--ok); }
+
+body.home .app { grid-template-columns: minmax(0, 1fr); max-width: 1100px; }
+body.home .main { display: none; }
+body.home .plist { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+body.home .search { max-width: 420px; }
+.rail-top { display: grid; gap: 10px; }
+.crumb { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.crumb .btn { padding: 4px 8px; }
+.folder-name { flex: 1; min-width: 0; font-weight: 700; font-size: 18px; border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; background: transparent; }
+.folder-name:hover, .folder-name:focus { border-color: var(--line); background: var(--sheet); }
+.fitem { text-align: left; border: 1px solid var(--line); background: var(--sheet); border-radius: 8px; padding: 12px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
+.fitem:hover { border-color: var(--muted); }
+.fitem[aria-current="true"] { border-color: var(--accent); }
+.fitem svg { grid-row: span 2; width: 26px; height: 22px; color: var(--accent); }
+.fitem.none svg { color: var(--muted); }
+.fitem .t { font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
+.fitem .n { font-family: var(--f-mono); font-size: 13px; color: var(--muted); grid-row: span 2; }
+.fitem .sub { font-size: 12px; color: var(--muted); }
+.pitem .f { font-size: 11px; color: var(--accent); }
+.btn { border: 1px solid var(--line); background: var(--sheet); border-radius: 6px; padding: 7px 12px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 500; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn.ghost:hover { color: var(--ink); background: var(--sheet-2); }
+.btn.danger { color: var(--danger); }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* main */
+.main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+.head { padding: 16px 18px; display: grid; gap: 14px; }
+.title-row { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.title-row .title-in { flex: 1; }
+.title-row .btn.danger:hover { border-color: var(--danger); }
+.title-row .btn.armed { background: var(--danger); border-color: var(--danger); color: var(--on-accent); }
+.title-in { font-family: var(--f-body); font-weight: 700; font-size: 22px; border: 1px solid transparent; border-radius: 6px; padding: 2px 6px; margin-left: -7px; background: transparent; width: 100%; min-width: 0; }
+.title-in:hover, .title-in:focus { border-color: var(--line); background: var(--sheet-2); }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.field { display: grid; gap: 2px; min-width: 0; }
+.field input { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--sheet-2); width: 100%; min-width: 0; }
+
+/* stage stepper — reads like a slate's take boxes */
+.stages { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.stage { border: 0; border-right: 1px solid var(--line); background: var(--sheet-2); padding: 8px 6px; display: grid; gap: 1px; text-align: left; min-width: 0; }
+.stage:last-child { border-right: 0; }
+.stage small { font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.stage span { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.stage.done { background: var(--ok-soft); }
+.stage.done small { color: var(--ok); }
+.stage.now { background: var(--accent); color: var(--on-accent); }
+.stage.now small { color: var(--on-accent); opacity: .85; }
+@media (max-width: 560px) { .stages { grid-template-columns: repeat(3, minmax(0, 1fr)); } .stage:nth-child(3) { border-right: 0; } .stage:nth-child(-n+3) { border-bottom: 1px solid var(--line); } }
+
+.stats { display: flex; gap: 22px; flex-wrap: wrap; }
+.stat { display: grid; }
+.stat b { font-family: var(--f-mono); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding: 0 12px; }
+.tab { border: 0; background: none; padding: 10px 12px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 500; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.toolbar { padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+
+/* script sheet */
+.sheet-wrap { overflow-x: auto; }
+table.sheet { border-collapse: collapse; width: 100%; min-width: 1080px; table-layout: fixed; }
+.sheet th { position: sticky; top: 0; background: var(--sheet-2); text-align: left; font-family: var(--f-display); font-weight: 600; letter-spacing: .06em; font-size: 12px; color: var(--muted); padding: 8px 6px; border-bottom: 1px solid var(--line); z-index: 1; }
+.sheet td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); vertical-align: top; padding: 0; }
+.sheet td:last-child { border-right: 0; }
+.sheet tr:hover td { background: color-mix(in srgb, var(--sheet-2) 60%, transparent); }
+.cell { display: block; width: 100%; border: 0; background: transparent; padding: 8px 6px; resize: none; min-height: 38px; line-height: 1.5; overflow: hidden; }
+.cell:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--sheet); }
+.cell.mono { font-size: 13px; }
+.sheet .idx { font-family: var(--f-mono); font-size: 12px; color: var(--muted); padding: 9px 6px; text-align: right; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 12px; background: var(--sheet-2); margin: 7px 6px; white-space: nowrap; }
+.chip[data-s="1"] { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.chip[data-s="2"] { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.rowops { display: flex; flex-wrap: wrap; gap: 0; padding: 4px; }
+.rowops button { border: 0; background: none; color: var(--muted); padding: 3px 5px; border-radius: 4px; font-size: 12px; }
+.rowops button:hover { background: var(--sheet-2); color: var(--ink); }
+.rowops button.armed { color: var(--on-accent); background: var(--danger); }
+.scene-break td { border-top: 2px solid var(--ink); }
+.empty { padding: 36px 20px; text-align: center; color: var(--muted); display: grid; gap: 12px; justify-items: center; }
+.empty h3 { margin: 0; color: var(--ink); font-size: 16px; }
+
+/* plan sheet */
+table.plan-sheet { min-width: 520px; }
+.plan-sheet .pk { font-weight: 500; }
+.plan { padding: 14px 16px 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+.plan .wide { grid-column: 1 / -1; }
+@media (max-width: 760px) { .plan { grid-template-columns: minmax(0, 1fr); } }
+.pcell { width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--sheet-2); resize: vertical; min-height: 44px; line-height: 1.6; overflow: hidden; }
+.pcell:focus { background: var(--sheet); border-color: var(--accent); outline: none; }
+.pcell.body { min-height: 200px; }
+
+/* progress checklist */
+.progress { padding: 16px; display: grid; gap: 14px; max-width: 640px; }
+.pg-head { display: flex; align-items: center; gap: 12px; }
+.pg-head .bar { height: 6px; }
+.pg-list { display: grid; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.pg-item { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; background: var(--sheet); }
+.pg-item:last-child { border-bottom: 0; }
+.pg-item:hover { background: var(--sheet-2); }
+.pg-item input { width: 18px; height: 18px; accent-color: var(--ok); }
+.pg-no { color: var(--muted); font-size: 12px; }
+.pg-name { font-weight: 500; font-size: 15px; }
+.pg-date { color: var(--ok); font-size: 12px; }
+.pg-item.done { background: var(--ok-soft); }
+.pg-item.done .pg-name { color: var(--ok); }
+
+/* todo */
+.todo { padding: 12px 16px 18px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+@media (max-width: 760px) { .todo { grid-template-columns: minmax(0, 1fr); } }
+.tlist { display: grid; gap: 4px; }
+.titem { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 8px; align-items: center; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.titem input[type=text] { border: 0; background: transparent; padding: 4px 2px; width: 100%; }
+.titem.done input[type=text] { text-decoration: line-through; color: var(--muted); }
+textarea.notes { width: 100%; min-height: 220px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--sheet-2); resize: vertical; }
+
+/* import */
+.overlay { position: fixed; inset: 0; background: rgb(10 14 18 / .5); display: grid; place-items: center; padding: 16px; z-index: 10;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.modal { width: min(760px, 100%); max-height: calc(100% - 16px); overflow: auto; padding: 18px; display: grid; gap: 14px; }
+.modal h2 { margin: 0; font-size: 18px; }
+.drop { border: 2px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center; display: grid; gap: 6px; justify-items: center; background: var(--sheet-2); }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop small { color: var(--muted); }
+textarea.paste { width: 100%; min-height: 110px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--sheet-2); font-family: var(--f-mono); font-size: 12px; }
+.preview { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.preview table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 12px; }
+.preview th, .preview td { border-bottom: 1px solid var(--line); padding: 6px; text-align: left; vertical-align: top; }
+.preview th { background: var(--sheet-2); color: var(--muted); font-weight: 500; }
+.msg { font-size: 13px; color: var(--muted); }
+.msg.err { color: var(--danger); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--sheet); padding: 9px 16px; border-radius: 8px; font-size: 13px; z-index: 20; max-width: calc(100% - 32px); }
+.readonly .cell, .readonly input, .readonly textarea { pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) { .pitem, .btn, .stage { transition: border-color .15s, background-color .15s; } }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <aside class="rail">
+    <div class="brand"><b>SCRIPT BOARD</b><span>製片腳本工作台</span></div>
+    <div class="mode" id="mode">連線中…</div>
+    <div id="railTop" class="rail-top"></div>
+    <input class="search" id="search" type="search" placeholder="搜尋所有專案或客戶" aria-label="搜尋專案">
+    <div class="plist" id="plist"></div>
+    <div id="railFoot" class="row"></div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+<div class="overlay" id="importOverlay" hidden>
+  <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="impTitle">
+    <div class="row" style="justify-content:space-between">
+      <h2 id="impTitle">上傳腳本</h2>
+      <button class="btn ghost" id="impClose" type="button">關閉</button>
+    </div>
+    <label class="drop" id="drop" for="impFile">
+      <b>拖曳檔案到這裡，或點一下選擇檔案</b>
+      <small>支援 Excel（.xlsx .xls）、Numbers、CSV、Word（.docx）、純文字（.txt .md .fountain）</small>
+      <input id="impFile" type="file" accept=".xlsx,.xls,.numbers,.csv,.docx,.txt,.md,.fountain" hidden>
+    </label>
+    <div class="field">
+      <span class="label">或直接貼上</span>
+      <textarea class="paste" id="impPaste" placeholder="貼上腳本文字，或從 Excel／Google 試算表複製整張表格貼過來"></textarea>
+    </div>
+    <div class="msg" id="impMsg">表格會依欄名自動對應：場次、場景、畫面、台詞／旁白、鏡頭、秒數、備註。文字腳本會依「第1場／S1／內景／INT.」分場，「角色：台詞」歸到台詞欄。</div>
+    <div class="preview" id="impPreview" hidden></div>
+    <div class="row" id="impActions" hidden>
+      <button class="btn primary" id="impAppend" type="button">加到目前腳本後面</button>
+      <button class="btn" id="impReplace" type="button">取代目前腳本</button>
+      <button class="btn primary" id="impCreate" type="button">建立新專案</button>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="login" hidden>
+  <form class="card modal" id="loginForm" style="width:min(380px,100%)">
+    <div class="brand" style="padding:0"><b>SCRIPT BOARD</b><span>製片腳本工作台</span></div>
+    <label class="field"><span class="label">Email</span><input class="search" id="loginEmail" type="email" autocomplete="username" required></label>
+    <label class="field"><span class="label">密碼</span><input class="search" id="loginPass" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary" id="loginBtn" type="submit" style="justify-content:center">登入</button>
+    <div class="msg" id="loginMsg">用你在 Supabase 建立的帳號登入。</div>
+  </form>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const STAGES = ['企劃', '腳本', '分鏡', '拍攝／生成', '後製', '交片'];
+const SHOT_STATUS = ['待辦', '進行中', '完成'];
+const COLS = [
+  { k: 'shot', label: '鏡號', w: 60, mono: true },
+  { k: 'scene', label: '場次', w: 64, mono: true },
+  { k: 'location', label: '場景／地點', w: 130 },
+  { k: 'visual', label: '畫面描述', w: null },
+  { k: 'audio', label: '台詞／旁白', w: null },
+  { k: 'camera', label: '鏡頭／運鏡', w: 130 },
+  { k: 'dur', label: '秒數', w: 62, mono: true },
+  { k: 'note', label: '備註', w: 150 },
+];
+const LS_KEY = 'script-board-local-v1';
+
+const UI_KEY = 'script-board-ui';
+const state = { folders: new Map(), projects: new Map(), shots: new Map(), folder: null, sel: null, tab: 'script', q: '', canWrite: true, mode: 'loading' };
+try { const ui = JSON.parse(localStorage.getItem(UI_KEY) || '{}'); state.folder = ui.folder ?? null; state.sel = ui.sel ?? null; } catch {}
+function saveUi() { try { localStorage.setItem(UI_KEY, JSON.stringify({ folder: state.folder, sel: state.sel })); } catch {} }
+let db = null, downloads = null, pendingRender = false, importCtx = null, parsedRows = null, parsedName = '';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const num = v => { const n = parseFloat(String(v ?? '').replace(/[^\d.]/g, '')); return isFinite(n) ? n : 0; };
+const fmtDur = s => { s = Math.round(s); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+
+function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => el.hidden = true, 2600); }
+
+/* ---------- storage: Supabase (tables board_folders / board_projects / board_shots: id, user_id, data jsonb) ---------- */
+const cfg = window.SCRIPT_BOARD_CONFIG || {};
+const sb = cfg.supabaseUrl && cfg.supabaseAnonKey && window.supabase ? supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
+const T = { folders: 'board_folders', projects: 'board_projects', shots: 'board_shots' };
+let lastLoad = 0, userEmail = '';
+
+async function sbWrite(q) { const { error } = await q; if (error) throw error; }
+const strip = o => { const { id, ...d } = o || {}; return d; };
+function put(kind, id, d) {
+  state[kind].set(id, { id, ...d }); scheduleRender();
+  return sbWrite(sb.from(T[kind]).upsert({ id, data: d, updated_at: new Date().toISOString() }));
+}
+const patch = (kind, id, p) => put(kind, id, { ...strip(state[kind].get(id)), ...p });
+function del(kind, id) { state[kind].delete(id); scheduleRender(); return sbWrite(sb.from(T[kind]).delete().eq('id', id)); }
+const api = {
+  setFolder: (id, d) => put('folders', id, d), updateFolder: (id, p) => patch('folders', id, p), delFolder: id => del('folders', id),
+  setProject: (id, d) => put('projects', id, d), updateProject: (id, p) => patch('projects', id, p), delProject: id => del('projects', id),
+  setShot: (id, d) => put('shots', id, d), updateShot: (id, p) => patch('shots', id, p), delShot: id => del('shots', id),
+};
+async function guard(p) {
+  try { return await p; } catch (e) {
+    if (e?.status === 401 || /JWT|session/i.test(e?.message || '')) { toast('登入已過期，請重新登入。'); showLogin(); }
+    else toast('儲存失敗，請檢查網路後再試。');
+    throw e;
+  }
+}
+async function inChunks(items, fn, n = 8) { for (let i = 0; i < items.length; i += n) await Promise.all(items.slice(i, i + n).map(fn)); }
+function setReadonly() { state.canWrite = false; document.body.classList.add('readonly'); scheduleRender(); }
+
+async function fetchAll(kind) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await sb.from(T[kind]).select('id,data').range(from, from + 999);
+    if (error) throw error;
+    out.push(...data);
+    if (data.length < 1000) break;
+  }
+  return new Map(out.map(r => [r.id, { id: r.id, ...r.data }]));
+}
+async function loadAll() {
+  try {
+    const [f, p, s] = await Promise.all(['folders', 'projects', 'shots'].map(fetchAll));
+    lastLoad = Date.now();
+    const sig = m => JSON.stringify([...m.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1));
+    // Nothing changed on another device: leave the page alone.
+    if (state.mode === 'db' && sig(f) === sig(state.folders) && sig(p) === sig(state.projects) && sig(s) === sig(state.shots)) return;
+    state.folders = f; state.projects = p; state.shots = s; state.mode = 'db';
+    scheduleRender();
+  } catch (e) { toast('讀取資料失敗：' + (e.message || '請確認已在 Supabase 執行建表 SQL。')); }
+}
+// Pick up edits made on another device when this tab comes back into view.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.mode === 'db' && Date.now() - lastLoad > 15000 && !editing()) loadAll();
+});
+
+/* ---------- login ---------- */
+function showLogin(msg) {
+  $('#login').hidden = false;
+  if (msg) { $('#loginMsg').textContent = msg; $('#loginMsg').className = 'msg err'; }
+}
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#loginBtn'); btn.disabled = true; $('#loginMsg').className = 'msg'; $('#loginMsg').textContent = '登入中…';
+  const { error } = await sb.auth.signInWithPassword({ email: $('#loginEmail').value.trim(), password: $('#loginPass').value });
+  btn.disabled = false;
+  if (error) { $('#loginMsg').className = 'msg err'; $('#loginMsg').textContent = /invalid/i.test(error.message) ? 'Email 或密碼不對，請再試一次。' : '登入失敗：' + error.message; }
+});
+async function logout() { await sb.auth.signOut(); }
+
+/* ---------- backup ---------- */
+function backupDownload() {
+  const pack = k => [...state[k].values()].map(o => ({ id: o.id, data: strip(o) }));
+  const json = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), folders: pack('folders'), projects: pack('projects'), shots: pack('shots') }, null, 1);
+  offer(`製片工作台備份_${new Date().toISOString().slice(0, 10)}.json`, new Blob([json], { type: 'application/json' }));
+}
+async function backupUpload(file) {
+  let d;
+  try { d = JSON.parse(await file.text()); } catch { toast('這不是有效的備份檔。'); return; }
+  const kinds = ['folders', 'projects', 'shots'];
+  if (!kinds.some(k => Array.isArray(d[k]))) { toast('備份檔裡沒有資料夾、專案或鏡頭。'); return; }
+  toast('匯入中…');
+  try {
+    for (const k of kinds) {
+      const rows = (d[k] || []).filter(r => r?.id && r.data).map(r => ({ id: r.id, data: r.data, updated_at: new Date().toISOString() }));
+      for (let i = 0; i < rows.length; i += 500) await sbWrite(sb.from(T[k]).upsert(rows.slice(i, i + 500)));
+    }
+    await loadAll();
+    toast(`已匯入 ${(d.folders || []).length} 個資料夾、${(d.projects || []).length} 個專案、${(d.shots || []).length} 鏡`);
+  } catch (e) { toast('匯入失敗：' + (e.message || '請稍後再試。')); }
+}
+document.addEventListener('change', e => { if (e.target.id === 'backupFile') { const f = e.target.files[0]; e.target.value = ''; if (f) backupUpload(f); } });
+
+async function boot() {
+  render();
+  if (!sb) {
+    showLogin(window.supabase ? '還沒設定：請在 config.js 填入 Supabase 的專案網址和公開金鑰（anon key）。' : '登入元件沒有載入，請檢查網路後重新整理。');
+    $('#loginBtn').disabled = true; return;
+  }
+  sb.auth.onAuthStateChange((event, session) => {
+    if (session) {
+      userEmail = session.user.email || '';
+      $('#login').hidden = true;
+      // supabase-js repeats SIGNED_IN whenever the tab regains focus; only load on the first one.
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && state.mode !== 'db') loadAll();
+    } else {
+      state.folders = new Map(); state.projects = new Map(); state.shots = new Map(); state.mode = 'loading';
+      render(); showLogin();
+    }
+  });
+}
+
+/* ---------- derived ---------- */
+const shotsOf = pid => [...state.shots.values()].filter(s => s.projectId === pid).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+function projStats(pid) {
+  const rows = shotsOf(pid);
+  return { total: rows.length, done: rows.filter(r => r.status === 2).length, dur: rows.reduce((a, r) => a + num(r.dur), 0) };
+}
+function dueText(due) {
+  if (!due) return '未定交期';
+  const days = Math.round((new Date(due + 'T00:00:00') - new Date(new Date().toDateString())) / 864e5);
+  if (isNaN(days)) return due;
+  return days < 0 ? `逾期 ${-days} 天` : days === 0 ? '今天交' : `剩 ${days} 天`;
+}
+const byDue = (a, b) => (a.due || '9999').localeCompare(b.due || '9999') || (b.createdAt || 0) - (a.createdAt || 0);
+const NONE = '_none';
+const folderOf = p => p.folderId && state.folders.has(p.folderId) ? p.folderId : NONE;
+const projectsIn = fid => [...state.projects.values()].filter(p => folderOf(p) === fid).sort(byDue);
+const sortedFolders = () => [...state.folders.values()].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || (a.createdAt || 0) - (b.createdAt || 0));
+const folderName = fid => fid === NONE ? '未分類' : state.folders.get(fid)?.name || '未命名資料夾';
+function sortedProjects() {
+  const q = state.q.trim().toLowerCase(), list = state.folder ? projectsIn(state.folder) : [];
+  return q ? list.filter(p => (p.name + ' ' + (p.client || '')).toLowerCase().includes(q)) : list;
+}
+const isHome = () => state.mode !== 'loading' && !state.folder;
+const FOLDER_SVG = '<svg viewBox="0 0 26 22" aria-hidden="true"><path d="M1 4.5A2.5 2.5 0 0 1 3.5 2h6l2.5 3h10.5A2.5 2.5 0 0 1 25 7.5v11a2.5 2.5 0 0 1-2.5 2.5h-19A2.5 2.5 0 0 1 1 18.5z" fill="currentColor" opacity=".18"/><path d="M1 4.5A2.5 2.5 0 0 1 3.5 2h6l2.5 3h10.5A2.5 2.5 0 0 1 25 7.5v11a2.5 2.5 0 0 1-2.5 2.5h-19A2.5 2.5 0 0 1 1 18.5z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
+
+/* ---------- render ---------- */
+function editing() { const a = document.activeElement; return a && $('#app').contains(a) && a.id !== 'search' && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
+function scheduleRender() { if (editing()) { pendingRender = true; if (!$('.rail').contains(document.activeElement)) renderRail(); return; } render(); }
+$('#app').addEventListener('focusout', () => setTimeout(() => { if (pendingRender && !editing()) { pendingRender = false; render(); } }, 0));
+
+function render() {
+  if (state.mode !== 'loading') {
+    if (state.folder && state.folder !== NONE && !state.folders.has(state.folder)) state.folder = null;
+    if (state.sel && !state.projects.has(state.sel)) state.sel = null;
+    if (state.sel && state.folder && folderOf(state.projects.get(state.sel)) !== state.folder) state.sel = null;
+    if (!state.sel && state.folder) state.sel = projectsIn(state.folder)[0]?.id ?? null;
+    saveUi();
+  }
+  // Redrawing replaces the page content; hold its height and put the scroll back so nothing jumps.
+  const app = $('#app'), y = window.scrollY, sx = [...app.querySelectorAll('.sheet-wrap')].map(e => e.scrollLeft);
+  app.style.minHeight = app.offsetHeight + 'px';
+  renderRail(); renderMain();
+  app.querySelectorAll('.sheet-wrap').forEach((e, i) => { e.scrollLeft = sx[i] || 0; });
+  app.style.minHeight = '';
+  if (window.scrollY !== y) window.scrollTo(0, y);
+}
+
+function railFolders() {
+  const q = state.q.trim().toLowerCase();
+  let items = sortedFolders().map(f => [f.id, f.name, '']);
+  if (projectsIn(NONE).length) items.push([NONE, '未分類', ' none']);
+  if (q) items = items.filter(([, n]) => (n || '').toLowerCase().includes(q));
+  if (!items.length) return `<div class="msg">${state.mode === 'loading' ? '' : q ? '沒有符合的資料夾。' : '還沒有資料夾。按「新增資料夾」，例如用客戶或演員名稱分類。'}</div>`;
+  return items.map(([id, name, cls]) => {
+    const ps = projectsIn(id), active = ps.filter(p => (p.stage ?? 0) < STAGES.length - 1).length;
+    const next = ps.find(p => p.due && (p.stage ?? 0) < STAGES.length - 1);
+    return `<button class="fitem${cls}" type="button" data-fid="${esc(id)}" aria-current="${state.sel ? folderOf(state.projects.get(state.sel) || {}) === id : false}">
+      ${FOLDER_SVG}<span class="t">${esc(name || '未命名資料夾')}</span><span class="n">${ps.length}</span>
+      <span class="sub">${ps.length ? `${active} 個進行中${next ? '・最近 ' + esc(dueText(next.due)) : ''}` : '空的'}</span>
+    </button>`;
+  }).join('');
+}
+function railProjects(list, showFolder) {
+  if (!list.length) return `<div class="msg">${state.q ? '沒有符合的專案。' : '這個資料夾還沒有專案。'}</div>`;
+  return list.map(p => {
+    const s = projStats(p.id), pct = s.total ? Math.round(s.done / s.total * 100) : 0;
+    return `<button class="pitem" type="button" data-pid="${esc(p.id)}" aria-current="${p.id === state.sel}">
+      ${showFolder ? `<span class="f">${esc(folderName(folderOf(p)))}</span>` : ''}
+      <span class="t">${esc(p.name || '未命名專案')}</span>
+      <span class="meta"><span>${esc(STAGES[p.stage ?? 0])}${p.client ? '・' + esc(p.client) : ''}</span><span>${esc(dueText(p.due))}</span></span>
+      <span class="bar" title="完成 ${s.done}/${s.total} 鏡"><i style="width:${pct}%"></i></span>
+    </button>`;
+  }).join('');
+}
+
+function renderRail() {
+  const w = state.canWrite ? '' : ' disabled';
+  const home = !state.folder;
+  document.body.classList.toggle('home', isHome());
+  $('#search').placeholder = home ? '搜尋資料夾' : '搜尋這個資料夾的專案或客戶';
+  if (state.folder) {
+    const real = state.folder !== NONE;
+    $('#railTop').innerHTML = `<div class="crumb"><button class="btn ghost" type="button" data-act="back">← 資料夾</button></div>
+      <div class="crumb">${real ? `<input class="folder-name" id="folderName" value="${esc(folderName(state.folder))}" aria-label="資料夾名稱"${w}>` : `<span class="folder-name">未分類</span>`}</div>
+      <div class="row"><button class="btn primary" type="button" data-act="newProject"${w}>＋ 新增專案</button><button class="btn" type="button" data-act="importNew"${w}>上傳腳本</button></div>`;
+    $('#plist').innerHTML = railProjects(sortedProjects(), false);
+    $('#railFoot').innerHTML = `<button class="btn" type="button" data-act="exportFolder">匯出這個資料夾到 Excel</button>
+      ${real ? `<button class="btn ghost danger" type="button" data-act="delFolder"${w}>刪除資料夾</button>` : ''}`;
+  } else {
+    $('#railTop').innerHTML = `<div class="row"><button class="btn primary" type="button" data-act="newFolder"${w}>＋ 新增資料夾</button></div>`;
+    $('#plist').innerHTML = railFolders();
+    $('#railFoot').innerHTML = `<button class="btn" type="button" data-act="exportAll">匯出全部到 Excel</button><button class="btn" type="button" data-act="backupDown">下載備份</button><label class="btn" for="backupFile">匯入備份</label><input id="backupFile" type="file" accept=".json" hidden>`;
+  }
+  renderMode();
+}
+function renderMode() {
+  const mode = $('#mode');
+  mode.className = 'mode';
+  mode.innerHTML = state.mode === 'db' ? `${esc(userEmail)}・已同步 <button class="btn ghost" type="button" data-act="logout" style="padding:2px 6px">登出</button>` : '連線中…';
+}
+
+function renderMain() {
+  const main = $('#main');
+  if (isHome()) { main.innerHTML = ''; return; }
+  const p = state.projects.get(state.sel);
+  if (!p) {
+    const where = state.folder ? `「${esc(folderName(state.folder))}」` : '';
+    main.innerHTML = `<div class="card"><div class="empty">
+      <h3>${state.mode === 'loading' ? '載入專案中…' : state.folder ? `${where}還沒有專案` : '先選一個資料夾'}</h3>
+      ${state.mode === 'loading' ? '' : state.folder ? `<p>新增一個專案，或直接上傳現有的腳本（Excel、Word、文字檔），系統會拆成逐鏡的表格讓你編輯。</p>
+      <div class="row"><button class="btn primary" type="button" data-act="newProject">＋ 新增專案</button><button class="btn" type="button" data-act="importNew">上傳腳本建立專案</button></div>`
+      : '<p>左邊每個資料夾裡是各自的專案企劃，點進去就能看到。</p>'}
+    </div></div>`;
+    return;
+  }
+  const s = projStats(p.id), stage = p.stage ?? 0;
+  main.innerHTML = `
+  <section class="card head">
+    <div class="title-row">
+      <input class="title-in" id="f-name" value="${esc(p.name)}" aria-label="專案名稱" placeholder="專案名稱">
+      <button class="btn danger" type="button" data-act="delProject">刪除專案</button>
+    </div>
+    <div class="fields">
+      <label class="field"><span class="label">客戶</span><input id="f-client" value="${esc(p.client || '')}" placeholder="客戶／品牌"></label>
+      <label class="field"><span class="label">規格</span><input id="f-spec" value="${esc(p.spec || '')}" placeholder="例：9:16・30 秒"></label>
+      <label class="field"><span class="label">交期</span><input id="f-due" type="date" value="${esc(p.due || '')}"></label>
+      <label class="field"><span class="label">資料夾</span><select id="f-folderId" class="search" style="padding:6px 8px;background:var(--sheet-2)">
+        <option value="">未分類</option>${sortedFolders().map(f => `<option value="${esc(f.id)}"${folderOf(p) === f.id ? ' selected' : ''}>${esc(f.name || '未命名資料夾')}</option>`).join('')}
+      </select></label>
+    </div>
+    <div class="stages" role="group" aria-label="製作階段">${STAGES.map((n, i) =>
+      `<button type="button" class="stage ${i < stage ? 'done' : i === stage ? 'now' : ''}" data-stage="${i}" aria-pressed="${i === stage}"><small>${String(i + 1).padStart(2, '0')}${i < stage ? ' ✓' : ''}</small><span>${n}</span></button>`).join('')}</div>
+    <div class="stats">
+      <div class="stat"><span class="label">專案進度</span><b>${progressDone(p)}/${MILESTONES.length}</b></div>
+      <div class="stat"><span class="label">鏡頭</span><b>${s.total}</b></div>
+      <div class="stat"><span class="label">已完成</span><b>${s.done}/${s.total}</b></div>
+      <div class="stat"><span class="label">交期</span><b style="font-size:15px">${esc(dueText(p.due))}</b></div>
+    </div>
+  </section>
+  <section class="card">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" type="button" data-tab="plan" aria-selected="${state.tab === 'plan'}">企劃表</button>
+      <button class="tab" role="tab" type="button" data-tab="script" aria-selected="${state.tab === 'script'}">腳本表</button>
+      <button class="tab" role="tab" type="button" data-tab="todo" aria-selected="${state.tab === 'todo'}">待辦與筆記</button>
+      <button class="tab" role="tab" type="button" data-tab="progress" aria-selected="${state.tab === 'progress'}">專案進度</button>
+    </div>
+    ${state.tab === 'script' ? scriptView(p) : state.tab === 'plan' ? planView(p) : state.tab === 'progress' ? progressView(p) : todoView(p)}
+  </section>`;
+  main.querySelectorAll('textarea.cell, textarea.pcell').forEach(autoGrow);
+}
+
+function scriptView(p) {
+  const rows = shotsOf(p.id);
+  const tools = `<div class="toolbar">
+    <div class="row">
+      <button class="btn primary" type="button" data-act="addShot">＋ 新增一鏡</button>
+      <button class="btn" type="button" data-act="importHere">上傳／貼上腳本</button>
+    </div>
+    <div class="row">
+      <button class="btn" type="button" data-act="exportOne">匯出 Excel</button>
+      <button class="btn" type="button" data-act="exportCsv">匯出 CSV</button>
+      <button class="btn" type="button" data-act="copyTsv">複製表格</button>
+    </div>
+  </div>`;
+  if (!rows.length) return tools + `<div class="empty"><h3>這個專案還沒有腳本</h3><p>上傳腳本檔，或按「新增一鏡」從頭寫。</p></div>`;
+  let prevScene = null;
+  const body = rows.map((r, i) => {
+    const brk = i > 0 && r.scene && r.scene !== prevScene; prevScene = r.scene;
+    return `<tr data-sid="${esc(r.id)}" class="${brk ? 'scene-break' : ''}">
+      <td class="idx">${i + 1}</td>
+      ${COLS.map(c => `<td><textarea class="cell${c.mono ? ' mono' : ''}" rows="1" data-k="${c.k}" aria-label="${c.label}">${esc(r[c.k] ?? '')}</textarea></td>`).join('')}
+      <td><button type="button" class="chip" data-s="${r.status || 0}" data-act="cycle">${SHOT_STATUS[r.status || 0]}</button></td>
+      <td><div class="rowops">
+        <button type="button" data-act="up" title="上移" aria-label="上移">↑</button>
+        <button type="button" data-act="down" title="下移" aria-label="下移">↓</button>
+        <button type="button" data-act="insert" title="在下方插入一鏡">＋插入</button>
+        <button type="button" data-act="delShot" title="刪除這一鏡">刪除</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  return tools + `<div class="sheet-wrap"><table class="sheet">
+    <colgroup><col style="width:40px">${COLS.map(c => `<col${c.w ? ` style="width:${c.w}px"` : ''}>`).join('')}<col style="width:84px"><col style="width:112px"></colgroup>
+    <thead><tr><th>#</th>${COLS.map(c => `<th>${c.label}</th>`).join('')}<th>狀態</th><th></th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+
+const NUMBERS_HINT = '這個 Numbers 檔讀不到。請在 Numbers 選「檔案 → 輸出為 → Excel」，再匯入 .xlsx。';
+const LEGACY_PLAN = [['goal', '專案目標'], ['audience', '目標受眾'], ['message', '核心訊息'], ['product', '產品／品牌重點'], ['platform', '平台與規格'], ['tone', '風格調性'], ['talent', '演員／出鏡人物'], ['shoot', '拍攝日期與地點'], ['props', '道具與服裝'], ['budget', '預算'], ['deliver', '交付內容'], ['client_notes', '客戶要求與禁忌'], ['body', '企劃內容']];
+// Two-column plan: [{k: 項目, v: 內容}]. Older projects stored named fields; show those as rows until the first edit.
+function planRows(p) {
+  const plan = p.plan || {};
+  if (Array.isArray(plan.rows)) return plan.rows;
+  return LEGACY_PLAN.filter(([k]) => plan[k]).map(([k, label]) => ({ k: label, v: plan[k] }));
+}
+const savePlan = (p, rows) => guard(api.updateProject(p.id, { plan: { rows } }));
+let planPending = null;
+function planView(p) {
+  const rows = planRows(p);
+  const pend = planPending && planPending.pid === p.id ? planPending : null;
+  return `<div class="toolbar">
+    <div class="row">
+      <button class="btn primary" type="button" data-act="planAdd">＋ 新增一列</button>
+      <label class="btn" for="planFile">匯入企劃 Excel</label>
+      <input id="planFile" type="file" accept=".xlsx,.xls,.numbers,.csv,.docx,.txt" hidden>
+    </div>
+    <div class="row">
+      <button class="btn" type="button" data-act="exportOne">匯出 Excel</button>
+      ${rows.length ? '<button class="btn ghost danger" type="button" data-act="planClear">清空企劃表</button>' : ''}
+    </div>
+  </div>
+  ${pend ? `<div class="toolbar"><span class="msg">從「${esc(pend.name)}」讀到 ${pend.rows.length} 列。</span>
+    <div class="row"><button class="btn primary" type="button" data-act="planReplace">取代目前企劃表</button><button class="btn" type="button" data-act="planAppend">加在後面</button><button class="btn ghost" type="button" data-act="planCancel">取消</button></div></div>` : ''}
+  ${rows.length ? `<div class="sheet-wrap"><table class="sheet plan-sheet">
+    <colgroup><col style="width:36px"><col style="width:28%"><col><col style="width:112px"></colgroup>
+    <thead><tr><th>#</th><th>項目</th><th>內容</th><th></th></tr></thead>
+    <tbody>${rows.map((r, i) => `<tr data-pr="${i}">
+      <td class="idx">${i + 1}</td>
+      <td><textarea class="cell pk" rows="1" data-pf="k" aria-label="項目">${esc(r.k)}</textarea></td>
+      <td><textarea class="cell" rows="1" data-pf="v" aria-label="內容">${esc(r.v)}</textarea></td>
+      <td><div class="rowops">
+        <button type="button" data-act="planUp" aria-label="上移">↑</button>
+        <button type="button" data-act="planDown" aria-label="下移">↓</button>
+        <button type="button" data-act="planInsert">＋插入</button>
+        <button type="button" data-act="planDel">刪除</button>
+      </div></td></tr>`).join('')}</tbody></table></div>`
+  : `<div class="empty"><h3>企劃表是空的</h3><p>匯入你的企劃 Excel（第一欄是項目、第二欄是內容），或按「新增一列」自己填。</p></div>`}`;
+}
+// Excel rows → {k, v}: column A is the item, the rest is content; a row with an empty column A continues the item above.
+function tableToPlan(rows) {
+  const out = [];
+  for (const raw of rows) {
+    const r = raw.map(c => String(c ?? '').trim());
+    if (!r.some(Boolean)) continue;
+    const k = r[0], v = r.slice(1).filter(Boolean).join('\n');
+    if (!k && out.length) out.at(-1).v = out.at(-1).v ? out.at(-1).v + '\n' + v : v;
+    else out.push({ k, v });
+  }
+  if (out.length > 1 && /^(項目|欄位|類別|item)$/i.test(out[0].k) && /^(內容|說明|content)?$/i.test(out[0].v)) out.shift();
+  return out;
+}
+async function importPlanFile(file, p) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows;
+  try {
+    if (['xlsx', 'xls', 'numbers', 'csv'].includes(ext)) {
+      const wb = ext === 'csv' ? XLSX.read(await file.text(), { type: 'string' }) : XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      rows = wb.SheetNames.map(n => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '' })).sort((a, b) => b.length - a.length)[0] || [];
+    } else if (ext === 'docx') {
+      const buf = await file.arrayBuffer();
+      rows = htmlTables((await mammoth.convertToHtml({ arrayBuffer: buf })).value);
+      if (!rows) rows = (await mammoth.extractRawText({ arrayBuffer: buf })).value.split('\n').map(l => [l]);
+    } else rows = (await file.text()).split(/\r?\n/).map(l => l.split('\t'));
+  } catch { toast(ext === 'numbers' ? NUMBERS_HINT : '讀取失敗，請確認檔案沒有損壞。'); return; }
+  const parsed = tableToPlan(rows);
+  if (!parsed.length) { toast('檔案裡沒有讀到內容。'); return; }
+  if (!planRows(p).length) { await savePlan(p, parsed); toast(`已匯入 ${parsed.length} 列`); return; }
+  planPending = { pid: p.id, rows: parsed, name: file.name }; render();
+}
+
+const MILESTONES = [['product', '產品資訊'], ['script', '腳本'], ['shoot', '拍攝'], ['post', '後製'], ['close', '結案']];
+const progressDone = p => MILESTONES.filter(([k]) => p.progress?.[k]?.done).length;
+function progressView(p) {
+  const pr = p.progress || {}, n = progressDone(p);
+  return `<div class="progress">
+    <div class="pg-head"><span class="label">完成 ${n} / ${MILESTONES.length}</span>
+      <span class="bar" style="flex:1"><i style="width:${n / MILESTONES.length * 100}%"></i></span></div>
+    <div class="pg-list">${MILESTONES.map(([k, label], i) => {
+      const m = pr[k] || {};
+      return `<label class="pg-item ${m.done ? 'done' : ''}">
+        <input type="checkbox" data-ms="${k}" ${m.done ? 'checked' : ''}>
+        <span class="pg-no mono">${String(i + 1).padStart(2, '0')}</span>
+        <span class="pg-name">${label}</span>
+        <span class="pg-date mono">${m.done && m.at ? '完成於 ' + esc(m.at) : ''}</span>
+      </label>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function todoView(p) {
+  const tasks = p.tasks || [];
+  return `<div class="todo">
+    <div class="field" style="gap:8px">
+      <span class="label">待辦清單</span>
+      <div class="tlist">${tasks.map(t => `<div class="titem ${t.done ? 'done' : ''}" data-tid="${esc(t.id)}">
+        <input type="checkbox" ${t.done ? 'checked' : ''} aria-label="完成" data-act="toggleTask">
+        <input type="text" value="${esc(t.text)}" data-k="taskText" aria-label="待辦內容">
+        <button class="btn ghost" type="button" data-act="delTask" aria-label="刪除待辦">✕</button></div>`).join('') || '<div class="msg">還沒有待辦事項。</div>'}</div>
+      <form class="row" id="taskForm"><input class="search" style="flex:1;min-width:0" id="taskNew" placeholder="新增待辦，例如：確認演員檔期" aria-label="新增待辦"><button class="btn" type="submit">加入</button></form>
+    </div>
+    <label class="field" style="gap:8px"><span class="label">專案筆記</span><textarea class="notes" id="f-notes" placeholder="拍攝重點、客戶回饋、素材位置…">${esc(p.notes || '')}</textarea></label>
+  </div>`;
+}
+
+function autoGrow(t) {
+  const y = window.scrollY;
+  t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px';
+  if (window.scrollY !== y) window.scrollTo(0, y);
+}
+
+/* ---------- actions ---------- */
+async function newProject(name = '未命名專案') {
+  const id = uid('p'), folderId = state.folder && state.folder !== NONE ? state.folder : '';
+  await guard(api.setProject(id, { name, folderId, client: '', spec: '', due: '', stage: 0, notes: '', tasks: [], createdAt: Date.now() }));
+  state.sel = id; state.tab = 'script'; state.folder = folderId || NONE; render();
+  return id;
+}
+async function newFolder() {
+  const id = uid('f'), order = Math.max(0, ...sortedFolders().map(f => f.order ?? 0)) + 1;
+  await guard(api.setFolder(id, { name: '新資料夾', order, createdAt: Date.now() }));
+  state.folder = id; state.sel = null; render();
+  const inp = $('#folderName'); if (inp) { inp.focus(); inp.select(); }
+}
+async function addShot(pid, afterIdx = null) {
+  const rows = shotsOf(pid);
+  let order;
+  if (afterIdx == null || afterIdx >= rows.length - 1) order = (rows.at(-1)?.order ?? 0) + 1;
+  else order = (rows[afterIdx].order + rows[afterIdx + 1].order) / 2;
+  const prev = rows[afterIdx ?? rows.length - 1];
+  const id = uid('s');
+  await guard(api.setShot(id, { projectId: pid, order, shot: String(rows.length + 1), scene: prev?.scene || '', location: prev?.location || '', visual: '', audio: '', camera: '', dur: '', note: '', status: 0 }));
+  render();
+  $(`tr[data-sid="${id}"] textarea[data-k="visual"]`)?.focus();
+}
+
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-act],[data-pid],[data-fid],[data-tab],[data-stage]');
+  if (!b) return;
+  const p = state.projects.get(state.sel);
+  if (b.dataset.fid) { clearSearch(); state.folder = b.dataset.fid; state.sel = projectsIn(state.folder)[0]?.id ?? null; render(); return; }
+  if (b.dataset.pid) { state.sel = b.dataset.pid; render(); return; }
+  if (b.dataset.tab) { state.tab = b.dataset.tab; render(); return; }
+  if (b.dataset.stage && p) { if (state.canWrite) guard(api.updateProject(p.id, { stage: +b.dataset.stage })); return; }
+  const act = b.dataset.act, tr = b.closest('tr[data-sid]'), sid = tr?.dataset.sid;
+  if (!state.canWrite && !['exportOne', 'exportCsv', 'copyTsv', 'exportAll', 'exportFolder', 'back', 'logout', 'backupDown'].includes(act)) return;
+  switch (act) {
+    case 'planAdd': case 'planInsert': {
+      const rows = planRows(p).map(r => ({ ...r })), at = act === 'planAdd' ? rows.length : +b.closest('tr').dataset.pr + 1;
+      rows.splice(at, 0, { k: '', v: '' }); await savePlan(p, rows); render();
+      $(`tr[data-pr="${at}"] textarea[data-pf="k"]`)?.focus(); break;
+    }
+    case 'planDel': {
+      if (!b.classList.contains('armed')) { arm(b, '確定刪除'); break; }
+      const rows = planRows(p).filter((_, i) => i !== +b.closest('tr').dataset.pr); savePlan(p, rows); break;
+    }
+    case 'planUp': case 'planDown': {
+      const rows = planRows(p).map(r => ({ ...r })), i = +b.closest('tr').dataset.pr, j = act === 'planUp' ? i - 1 : i + 1;
+      if (j < 0 || j >= rows.length) break;
+      [rows[i], rows[j]] = [rows[j], rows[i]]; savePlan(p, rows); break;
+    }
+    case 'planClear':
+      if (!b.classList.contains('armed')) { arm(b, '再按一次清空企劃表'); break; }
+      savePlan(p, []); break;
+    case 'planReplace': case 'planAppend': {
+      const pend = planPending; planPending = null;
+      if (pend) { await savePlan(p, act === 'planReplace' ? pend.rows : [...planRows(p), ...pend.rows]); toast(`已匯入 ${pend.rows.length} 列`); }
+      render(); break;
+    }
+    case 'planCancel': planPending = null; render(); break;
+    case 'logout': logout(); break;
+    case 'backupDown': backupDownload(); break;
+    case 'back': clearSearch(); state.folder = null; render(); break;
+    case 'newFolder': newFolder(); break;
+    case 'exportAll': exportXlsx([...state.projects.values()].sort((a, c) => folderName(folderOf(a)).localeCompare(folderName(folderOf(c))) || byDue(a, c)), '製片專案總表'); break;
+    case 'exportFolder': exportXlsx(projectsIn(state.folder), folderName(state.folder)); break;
+    case 'delFolder': {
+      if (!b.classList.contains('armed')) { arm(b, '再按一次（裡面的專案會移到未分類）'); break; }
+      const fid = state.folder;
+      await guard(inChunks(projectsIn(fid), x => api.updateProject(x.id, { folderId: '' })));
+      await guard(api.delFolder(fid)); state.folder = null; toast('已刪除資料夾'); render();
+      break;
+    }
+    case 'newProject': newProject(); break;
+    case 'importNew': openImport(null); break;
+    case 'importHere': openImport(p.id); break;
+    case 'addShot': addShot(p.id); break;
+    case 'insert': addShot(p.id, shotsOf(p.id).findIndex(r => r.id === sid)); break;
+    case 'cycle': { const s = state.shots.get(sid); guard(api.updateShot(sid, { status: ((s.status || 0) + 1) % 3 })); break; }
+    case 'up': case 'down': {
+      const rows = shotsOf(p.id), i = rows.findIndex(r => r.id === sid), j = act === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= rows.length) break;
+      const a = rows[i], c = rows[j];
+      let oa = c.order, oc = a.order; if (oa === oc) { oa = j; oc = i; }
+      await guard(api.updateShot(a.id, { order: oa })); await guard(api.updateShot(c.id, { order: oc }));
+      break;
+    }
+    case 'delShot':
+      if (!b.classList.contains('armed')) { arm(b, '確定刪除'); break; }
+      guard(api.delShot(sid)); break;
+    case 'delProject':
+      if (!b.classList.contains('armed')) { arm(b, '再按一次確認刪除'); break; }
+      { const ids = shotsOf(p.id).map(r => r.id); await guard(inChunks(ids, id => api.delShot(id))); await guard(api.delProject(p.id)); state.sel = null; toast('已刪除專案'); render(); }
+      break;
+    case 'delTask': guard(api.updateProject(p.id, { tasks: (p.tasks || []).filter(t => t.id !== b.closest('[data-tid]').dataset.tid) })); break;
+    case 'exportOne': exportXlsx([p]); break;
+    case 'exportCsv': exportCsv(p); break;
+    case 'copyTsv': copyTsv(p); break;
+  }
+});
+function arm(b, label) {
+  const old = b.textContent; b.classList.add('armed'); b.textContent = label;
+  setTimeout(() => { if (b.isConnected) { b.classList.remove('armed'); b.textContent = old; } }, 3000);
+}
+$('#search').oninput = e => { state.q = e.target.value; renderRail(); };
+function clearSearch() { state.q = ''; $('#search').value = ''; }
+$('.rail').addEventListener('change', e => {
+  if (e.target.id !== 'folderName' || !state.canWrite) return;
+  const f = state.folders.get(state.folder), v = e.target.value.trim();
+  if (f && v && v !== f.name) guard(api.updateFolder(f.id, { name: v }));
+});
+$('.rail').addEventListener('keydown', e => { if (e.target.id === 'folderName' && e.key === 'Enter') e.target.blur(); });
+
+$('#main').addEventListener('input', e => { if (e.target.matches('textarea.cell, textarea.pcell')) autoGrow(e.target); });
+$('#main').addEventListener('change', e => {
+  const t = e.target, p = state.projects.get(state.sel);
+  if (!p || !state.canWrite) return;
+  if (t.dataset.ms) {
+    t.blur();
+    const pr = { ...(p.progress || {}) };
+    pr[t.dataset.ms] = { done: t.checked, at: t.checked ? new Date().toLocaleDateString('sv') : '' };
+    guard(api.updateProject(p.id, { progress: pr }));
+    return;
+  }
+  if (t.id === 'planFile') { const f = t.files[0]; t.value = ''; if (f) importPlanFile(f, p); return; }
+  if (t.dataset.pf) {
+    const i = +t.closest('tr').dataset.pr, rows = planRows(p).map(r => ({ ...r }));
+    if (rows[i] && rows[i][t.dataset.pf] !== t.value) { rows[i][t.dataset.pf] = t.value; savePlan(p, rows); }
+    return;
+  }
+  if (t.matches('textarea.cell')) {
+    const sid = t.closest('tr').dataset.sid, k = t.dataset.k;
+    if ((state.shots.get(sid)?.[k] ?? '') !== t.value) guard(api.updateShot(sid, { [k]: t.value }));
+  } else if (t.id?.startsWith('f-')) {
+    const k = t.id.slice(2);
+    if (k === 'folderId') {
+      if (t.value === (folderOf(p) === NONE ? '' : folderOf(p))) return;
+      state.folder = t.value || NONE; t.blur();
+      guard(api.updateProject(p.id, { folderId: t.value })).then(() => { toast('已移到「' + folderName(state.folder) + '」'); render(); });
+      return;
+    }
+    if ((p[k] ?? '') !== t.value) guard(api.updateProject(p.id, { [k]: t.value }));
+  } else if (t.dataset.act === 'toggleTask' || t.dataset.k === 'taskText') {
+    const tid = t.closest('[data-tid]').dataset.tid;
+    const tasks = (p.tasks || []).map(x => x.id !== tid ? x : t.type === 'checkbox' ? { ...x, done: t.checked } : { ...x, text: t.value });
+    guard(api.updateProject(p.id, { tasks }));
+  }
+});
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'taskForm') return;
+  e.preventDefault();
+  const p = state.projects.get(state.sel), v = $('#taskNew').value.trim();
+  if (!p || !v || !state.canWrite) return;
+  $('#taskNew').value = '';
+  guard(api.updateProject(p.id, { tasks: [...(p.tasks || []), { id: uid('t'), text: v, done: false }] }));
+});
+
+/* ---------- import: parse files and pasted text into shot rows ---------- */
+const FIELD_KEYS = [
+  ['location', ['場景', '地點', '景點', 'location', 'loc', 'set']],
+  ['shot', ['鏡號', '鏡次', 'shot', 'cut', '#', 'no']],
+  ['scene', ['場次', '場號', 'scene', 'sc']],
+  ['visual', ['畫面', '內容', '描述', '動作', '影像', 'visual', 'action', 'description', 'video', 'picture']],
+  ['audio', ['台詞', '對白', '旁白', '聲音', '字幕', '音效', 'audio', 'dialogue', 'dialog', 'vo', 'sound']],
+  ['camera', ['鏡頭', '景別', '運鏡', '角度', '攝影', 'camera', 'angle', 'lens', 'move']],
+  ['dur', ['秒', '時長', '長度', '時間', 'duration', 'dur', 'sec', 'time']],
+  ['note', ['備註', '道具', '服裝', 'note', 'notes', 'remark', 'props']],
+  ['status', ['狀態', 'status']],
+];
+function mapHeader(row) {
+  const map = {}, used = new Set();
+  row.forEach((h, i) => {
+    const s = String(h).trim().toLowerCase(); if (!s) return;
+    for (const [k, words] of FIELD_KEYS) {
+      if (used.has(k)) continue;
+      const hit = words.some(w => w.length <= 3 && /^[a-z#]+$/.test(w) ? s === w || s.startsWith(w + ' ') || s.startsWith(w + '.') : s.includes(w));
+      if (hit || (k === 'scene' && s === '場')) { map[i] = k; used.add(k); return; }
+    }
+  });
+  return map;
+}
+function tableToShots(rows) {
+  rows = rows.map(r => r.map(c => String(c ?? '').trim())).filter(r => r.some(Boolean));
+  if (!rows.length) return [];
+  let map = mapHeader(rows[0]), start = 1;
+  if (Object.keys(map).length < 2) { map = {}; ['shot', 'scene', 'location', 'visual', 'audio', 'camera', 'dur', 'note'].forEach((k, i) => map[i] = k); start = 0; if (rows[0].length === 1) map = { 0: 'visual' }; }
+  return rows.slice(start).map(r => {
+    const o = {}; r.forEach((v, i) => { const k = map[i]; if (k) o[k] = o[k] ? o[k] + '\n' + v : v; });
+    if (o.status != null) { const i = SHOT_STATUS.findIndex(x => o.status.includes(x)); o.status = i < 0 ? (/done|完/i.test(o.status) ? 2 : 0) : i; }
+    return o;
+  }).filter(o => COLS.some(c => o[c.k]));
+}
+const SCENE_RE = /^\s*(?:(第\s*[0-9０-９一二三四五六七八九十百]+\s*場)|(場\s*[0-9]+)|(S(?:C|cene)?\.?\s*\d+[A-Z]?)|(\d+[A-Z]?)\s*[\.、:：]\s*(?=內|外|INT|EXT)|(?=(?:INT|EXT|I\/E)\.?\s)|(?=內景|外景|內\/外))\s*(.*)$/i;
+function textToShots(text) {
+  const lines = text.replace(/\r/g, '').split('\n');
+  const tabby = lines.filter(l => l.includes('\t')).length;
+  if (tabby >= 2 && tabby >= lines.filter(l => l.trim()).length * .6) return tableToShots(lines.map(l => l.split('\t')));
+  const out = []; let scene = '', location = '', sceneNo = 0, cur = null;
+  for (const raw of lines) {
+    const l = raw.trim(); if (!l) { cur = cur && (cur.visual || cur.audio) ? null : cur; continue; }
+    const m = l.match(SCENE_RE);
+    if (m && l.length < 80) {
+      sceneNo++;
+      const tag = (m[1] || m[2] || m[3] || m[4] || '').replace(/\s+/g, '');
+      scene = (tag.match(/[0-9０-９]+[A-Z]?/i)?.[0]) || (tag ? tag : String(sceneNo));
+      location = (m[5] || l).replace(/^[\s\-–—:：、.]+/, '').trim() || l;
+      cur = null; continue;
+    }
+    const durM = l.match(/[（(]?\s*(\d+(?:\.\d+)?)\s*(?:s|秒|sec)\s*[)）]?/i);
+    const dlg = l.match(/^([^：:\s]{1,12})\s*[：:]\s*(.+)$/);
+    if (dlg && !/^(畫面|鏡頭|備註)$/.test(dlg[1])) {
+      if (!cur) { cur = { scene, location, visual: '', audio: '' }; out.push(cur); }
+      cur.audio = (cur.audio ? cur.audio + '\n' : '') + `${dlg[1]}：${dlg[2]}`;
+    } else {
+      cur = { scene, location, visual: l, audio: '' }; out.push(cur);
+    }
+    if (durM && !cur.dur) cur.dur = durM[1];
+  }
+  return out;
+}
+function htmlTables(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const tables = [...doc.querySelectorAll('table')].map(t => [...t.querySelectorAll('tr')].map(tr => [...tr.children].map(td => td.innerText ?? td.textContent)));
+  return tables.sort((a, b) => b.length - a.length)[0];
+}
+async function parseFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (['xlsx', 'xls', 'numbers', 'csv'].includes(ext)) {
+    if (!window.XLSX) throw new Error('試算表元件沒有載入，請重新整理頁面。');
+    const wb = ext === 'csv' ? XLSX.read(await file.text(), { type: 'string' }) : XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    const sheets = wb.SheetNames.map(n => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '' }));
+    return tableToShots(sheets.sort((a, b) => b.length - a.length)[0] || []);
+  }
+  if (ext === 'docx') {
+    if (!window.mammoth) throw new Error('Word 元件沒有載入，請重新整理頁面。');
+    const buf = await file.arrayBuffer();
+    const { value: html } = await mammoth.convertToHtml({ arrayBuffer: buf });
+    const t = htmlTables(html);
+    if (t && t.length >= 2) return tableToShots(t);
+    const { value: text } = await mammoth.extractRawText({ arrayBuffer: buf });
+    return textToShots(text);
+  }
+  if (['txt', 'md', 'fountain'].includes(ext)) return textToShots(await file.text());
+  if (ext === 'pdf') throw new Error('PDF 無法直接讀取，請先另存成 Word 或文字檔，或把內容複製貼上。');
+  throw new Error('不支援這種檔案，請用 Excel、CSV、Word 或文字檔。');
+}
+
+function openImport(pid) {
+  importCtx = pid; parsedRows = null; parsedName = '';
+  $('#impTitle').textContent = pid ? `上傳腳本到「${state.projects.get(pid)?.name || ''}」` : '上傳腳本，建立新專案';
+  $('#impPaste').value = ''; $('#impPreview').hidden = true; $('#impActions').hidden = true;
+  $('#impMsg').className = 'msg';
+  $('#impMsg').textContent = '表格會依欄名自動對應：場次、場景、畫面、台詞／旁白、鏡頭、秒數、備註。文字腳本會依「第1場／S1／內景／INT.」分場，「角色：台詞」歸到台詞欄。';
+  $('#importOverlay').hidden = false;
+}
+function closeImport() { $('#importOverlay').hidden = true; $('#impFile').value = ''; }
+function showParsed(rows, name) {
+  parsedRows = rows; parsedName = name;
+  const msg = $('#impMsg');
+  if (!rows.length) { msg.className = 'msg err'; msg.textContent = '沒有讀到內容。表格請確認第一列是欄名；文字檔請確認不是空白。'; $('#impPreview').hidden = true; $('#impActions').hidden = true; return; }
+  msg.className = 'msg'; msg.textContent = `讀到 ${rows.length} 鏡${rows.length > 6 ? '，以下是前 6 鏡' : ''}。確認沒問題再匯入，之後都能在表格裡修改。`;
+  const cols = COLS.filter(c => rows.some(r => r[c.k]));
+  $('#impPreview').innerHTML = `<table><thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead><tbody>${rows.slice(0, 6).map(r => `<tr>${cols.map(c => `<td>${esc(r[c.k] || '').replace(/\n/g, '<br>')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  $('#impPreview').hidden = false; $('#impActions').hidden = false;
+  const hasExisting = importCtx && shotsOf(importCtx).length;
+  $('#impAppend').hidden = !hasExisting; $('#impReplace').hidden = !hasExisting;
+  $('#impCreate').hidden = !!hasExisting;
+  $('#impCreate').textContent = importCtx ? '匯入到這個專案' : '建立新專案並匯入';
+}
+async function handleFile(file) {
+  if (!file) return;
+  $('#impMsg').className = 'msg'; $('#impMsg').textContent = `讀取 ${file.name}…`;
+  try { showParsed(await parseFile(file), file.name.replace(/\.[^.]+$/, '')); }
+  catch (err) { $('#impMsg').className = 'msg err'; $('#impMsg').textContent = /\.numbers$/i.test(file.name) ? NUMBERS_HINT : err.message || '讀取失敗，請確認檔案沒有損壞。'; }
+}
+$('#impFile').onchange = e => handleFile(e.target.files[0]);
+const drop = $('#drop');
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); handleFile(e.dataTransfer.files[0]); });
+let pasteT; $('#impPaste').addEventListener('input', e => { clearTimeout(pasteT); pasteT = setTimeout(() => { const v = e.target.value; if (v.trim()) showParsed(textToShots(v), '貼上的腳本'); }, 300); });
+$('#impClose').onclick = closeImport;
+$('#importOverlay').addEventListener('click', e => { if (e.target.id === 'importOverlay') closeImport(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#importOverlay').hidden) closeImport(); });
+
+async function commitImport(mode) {
+  if (!parsedRows?.length || !state.canWrite) return;
+  const btns = $('#impActions').querySelectorAll('button'); btns.forEach(b => b.disabled = true);
+  try {
+    let pid = importCtx;
+    if (!pid) pid = await newProject(parsedName || '新專案');
+    if (mode === 'replace') await guard(inChunks(shotsOf(pid).map(r => r.id), id => api.delShot(id)));
+    const base = mode === 'append' ? (shotsOf(pid).at(-1)?.order ?? 0) : 0, offset = mode === 'append' ? shotsOf(pid).length : 0;
+    const docs = parsedRows.map((r, i) => [uid('s') + i, {
+      projectId: pid, order: base + i + 1, shot: r.shot || String(offset + i + 1), scene: r.scene || '', location: r.location || '',
+      visual: r.visual || '', audio: r.audio || '', camera: r.camera || '', dur: r.dur || '', note: r.note || '', status: r.status || 0,
+    }]);
+    await guard(inChunks(docs, ([id, d]) => api.setShot(id, d)));
+    state.sel = pid; state.tab = 'script'; closeImport(); render();
+    toast(`已匯入 ${docs.length} 鏡`);
+  } catch { } finally { btns.forEach(b => b.disabled = false); }
+}
+$('#impAppend').onclick = () => commitImport('append');
+$('#impReplace').onclick = () => commitImport('replace');
+$('#impCreate').onclick = () => commitImport('new');
+
+/* ---------- export ---------- */
+const HEAD = [...COLS.map(c => c.label), '狀態'];
+const rowOut = r => [...COLS.map(c => c.k === 'dur' && r.dur !== '' && isFinite(+r.dur) ? +r.dur : (r[c.k] ?? '')), SHOT_STATUS[r.status || 0]];
+async function offer(filename, data) {
+  if (downloads) {
+    try { await downloads.save({ filename, data }); toast('已下載 ' + filename); }
+    catch (e) { if (e?.code !== 'declined') toast('下載沒有完成，請再試一次。'); }
+    return;
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data])); a.download = filename; a.click();
+}
+function safeSheet(name, used) {
+  let n = (name || '專案').replace(/[\[\]:*?\/\\]/g, ' ').slice(0, 28) || '專案', k = n, i = 2;
+  while (used.has(k)) k = n.slice(0, 26) + '_' + i++;
+  used.add(k); return k;
+}
+function exportXlsx(projects, title) {
+  if (!window.XLSX) { toast('試算表元件沒有載入，請重新整理頁面。'); return; }
+  if (!projects.length) { toast('沒有可匯出的專案。'); return; }
+  const wb = XLSX.utils.book_new(), used = new Set(['總覽']);
+  const overview = [['資料夾', '專案', '客戶', '規格', '階段', '交期', ...MILESTONES.map(m => m[1]), '鏡頭數', '已完成', '總秒數', '待辦未完成']].concat(projects.map(p => {
+    const s = projStats(p.id);
+    return [folderName(folderOf(p)), p.name, p.client || '', p.spec || '', STAGES[p.stage ?? 0], p.due || '', ...MILESTONES.map(([k]) => p.progress?.[k]?.done ? '✓ ' + (p.progress[k].at || '') : ''), s.total, s.done, s.dur, (p.tasks || []).filter(t => !t.done).length];
+  }));
+  const ov = XLSX.utils.aoa_to_sheet(overview); ov['!cols'] = [14, 30, 16, 14, 10, 12, 12, 12, 12, 12, 12, 8, 8, 8, 10].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ov, '總覽');
+  for (const p of projects) {
+    const rows = shotsOf(p.id);
+    const pr = planRows(p).map(r => ['', r.k, r.v]);
+    const aoa = [[p.name, `資料夾：${folderName(folderOf(p))}`], [`客戶：${p.client || '—'}`, `規格：${p.spec || '—'}`, `交期：${p.due || '—'}`, `階段：${STAGES[p.stage ?? 0]}`], [],
+      ...(pr.length ? [['企劃表'], ['', '項目', '內容'], ...pr, []] : []),
+      ['腳本表'], ['#', ...HEAD], ...rows.map((r, i) => [i + 1, ...rowOut(r)])];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [4, 6, 6, 16, 40, 32, 16, 6, 20, 8].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, safeSheet(p.name, used));
+  }
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+  const name = title ? `${title}_${new Date().toISOString().slice(0, 10)}.xlsx` : `${projects[0].name || '專案'}_腳本.xlsx`;
+  offer(name, new Blob([buf]));
+}
+function exportCsv(p) {
+  const q = v => { v = String(v ?? ''); return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; };
+  const csv = '﻿' + [HEAD, ...shotsOf(p.id).map(rowOut)].map(r => r.map(q).join(',')).join('\r\n');
+  offer(`${p.name || '專案'}_腳本.csv`, new Blob([csv]));
+}
+async function copyTsv(p) {
+  const clean = v => String(v ?? '').replace(/\t/g, ' ').replace(/\n/g, ' / ');
+  const tsv = [HEAD, ...shotsOf(p.id).map(rowOut)].map(r => r.map(clean).join('\t')).join('\n');
+  try { await navigator.clipboard.writeText(tsv); toast('已複製，可以直接貼到 Excel 或 Google 試算表'); }
+  catch { toast('這個環境不允許複製，請改用「匯出 Excel」。'); }
+}
+
+boot();
+</script>
+
+</body>
+</html>
